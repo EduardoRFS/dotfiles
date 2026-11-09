@@ -14,7 +14,7 @@
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
-  # networking.hostName = "nixos"; # Define your hostname.
+  networking.hostName = "fernando"; # Define your hostname.
 
   # Configure network connections interactively with nmcli or nmtui.
   networking.networkmanager.enable = true;
@@ -28,11 +28,7 @@
 
   # Select internationalisation properties.
   i18n.defaultLocale = "en_US.UTF-8";
-  # console = {
-  #   font = "Lat2-Terminus16";
-  #   keyMap = "us";
-  #   useXkbConfig = true; # use xkb.options in tty.
-  # };
+  console.keyMap = "us";
 
   # Enable the X11 windowing system.
   # services.xserver.enable = true;
@@ -50,10 +46,10 @@
   # Enable sound.
   # services.pulseaudio.enable = true;
   # OR
-  # services.pipewire = {
-  #   enable = true;
-  #   pulse.enable = true;
-  # };
+  services.pipewire = {
+    enable = true;
+    pulse.enable = true;
+  };
 
   # Enable touchpad support (enabled default in most desktopManager).
   # services.libinput.enable = true;
@@ -61,13 +57,31 @@
   # Define a user account. Don't forget to set a password with ‘passwd’.
   users.users.eduardo = {
     isNormalUser = true;
+    shell = pkgs.zsh;
     extraGroups = [ "wheel" ]; # Enable ‘sudo’ for the user.
     packages = with pkgs; [
       tree
     ];
   };
 
+  programs.zsh = {
+    enable = true;
+    ohMyZsh = {
+      enable = true;
+      theme = "agnoster";
+      plugins = [ "git" ];
+    };
+  };
+  programs.git.enable = true;
+
   programs.sway.enable = true;
+  # Match i3: Brazilian and US layouts, switched with Super+Space.
+  environment.etc."sway/config.d/keyboard.conf".text = ''
+    input type:keyboard {
+      xkb_layout br,us
+      xkb_options grp:win_space_toggle
+    }
+  '';
   programs.firefox.enable = true;
 
   # List packages installed in system profile.
