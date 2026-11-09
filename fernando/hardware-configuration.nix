@@ -73,20 +73,24 @@ in
       boot.extraModulePackages = [ ];
 
       fileSystems."/" =
-        { device = "/dev/mapper/another_root";
+        { device = "/dev/mapper/nix_root";
           fsType = "btrfs";
+          options = [ "compress=zstd:1" ];
         };
 
       fileSystems."/boot" = {
-        device = "/dev/disk/by-uuid/F84D-72E9";
+        device = "/dev/disk/by-uuid/ED2B-9062";
         fsType = "vfat";
         options = [ "umask=0077" ];
       };
 
-      boot.initrd.luks.devices."another_root".device = "/dev/disk/by-uuid/77a06efa-992f-44d5-b58b-dadcad5e1dde";
+      boot.initrd.luks.devices."nix_root".device = "/dev/disk/by-uuid/22f0b874-3d61-4270-9baf-2ec304ecf2e8";
+
+      # Resume from the NixOS NVMe swap partition in every boot profile.
+      boot.resumeDevice = "/dev/disk/by-uuid/3c0b1ed4-97a6-45b3-b2e0-6d5732017c94";
 
       swapDevices =
-        [ { device = "/dev/disk/by-uuid/1584fff4-7d02-43e9-900e-c461d8b4bfb4"; }
+        [ { device = "/dev/disk/by-uuid/3c0b1ed4-97a6-45b3-b2e0-6d5732017c94"; }
         ];
 
       nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
