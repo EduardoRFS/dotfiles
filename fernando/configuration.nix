@@ -5,6 +5,17 @@
 { config, lib, pkgs, ... }:
 
 let
+  codeInsiders = (pkgs.vscode.override {
+    isInsiders = true;
+    commandLineArgs = "--password-store=gnome-libsecret";
+  }).overrideAttrs (_: {
+    version = "1.146.0-insider";
+    src = pkgs.fetchurl {
+      url = "https://update.code.visualstudio.com/commit:6bd30dab6e29addbe64365b91e27e20e611f064c/linux-x64/insider";
+      name = "vscode-insiders-1.146.0.tar.gz";
+      sha256 = "f327a1c5491da670dbbd2382d7e170c3d74777ca6cd7e9b9eca9e5d8401e6c6a";
+    };
+  });
   swaySource = pkgs.fetchFromGitHub {
     owner = "EduardoRFS";
     repo = "sway";
@@ -125,6 +136,11 @@ in
 
   programs.zsh = {
     enable = true;
+    autosuggestions.enable = true;
+    interactiveShellInit = lib.mkAfter ''
+      prompt_context() {}
+      source ${pkgs.zsh-fast-syntax-highlighting}/share/zsh/plugins/fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh
+    '';
     shellAliases.cat = "bat --plain --paging=never";
     ohMyZsh = {
       enable = true;
@@ -132,6 +148,7 @@ in
       plugins = [ "git" ];
     };
   };
+  programs.direnv.enable = true;
   programs.git.enable = true;
   environment.variables.EDITOR = "nano";
   environment.variables.TERMINAL = "alacritty";
@@ -162,9 +179,7 @@ in
   environment.etc."sway/config.d/desktop.conf".text = ''
     focus_follows_mouse no
     bar bar-0 {
-      position bottom
-      output DP1L
-      output DP1R
+      swaybar_command ${pkgs.waybar}/bin/waybar --config /etc/xdg/waybar/config --style /etc/xdg/waybar/style.css
     }
     set $term alacritty
     unbindsym $mod+Return
@@ -173,6 +188,55 @@ in
     unbindsym Print
     bindsym Print exec env QT_QPA_PLATFORM=wayland ${flameshot13}/bin/flameshot gui
     for_window [app_id="flameshot"] border pixel 0, floating enable, fullscreen disable, move absolute position 0 0
+  '';
+  environment.etc."xdg/waybar/config".text = builtins.toJSON {
+    layer = "bottom";
+    position = "bottom";
+    output = [ "DP1L" "DP1R" ];
+    height = 26;
+    "modules-left" = [ "sway/workspaces" "sway/mode" ];
+    "modules-right" = [ "network" "disk" "cpu" "memory" "clock" "tray" ];
+    "sway/workspaces" = { "disable-scroll" = true; };
+    network = {
+      interval = 5;
+      "format-ethernet" = "E: {ipaddr}";
+      "format-wifi" = "W: {essid} ({signalStrength}%) {ipaddr}";
+      "format-linked" = "{ifname}: no IP";
+      "format-disconnected" = "Network: down";
+      "tooltip-format" = "{ifname}\n↓ {bandwidthDownBits}  ↑ {bandwidthUpBits}";
+      "on-click" = "${pkgs.networkmanagerapplet}/bin/nm-connection-editor";
+    };
+    disk = { path = "/"; format = "{free} free"; interval = 30; };
+    cpu = { format = "CPU: {usage}%"; interval = 5; };
+    memory = { format = "RAM: {used:0.1f} GiB"; interval = 5; };
+    clock = { format = "{:%Y-%m-%d %H:%M:%S}"; interval = 1; };
+    tray = { "icon-size" = 16; spacing = 6; };
+  };
+  environment.etc."xdg/waybar/style.css".text = ''
+    * {
+      font-family: "DejaVuSansM Nerd Font Mono";
+      font-size: 13px;
+      border-radius: 0;
+      min-height: 0;
+    }
+    window#waybar { background: #000000; color: #ffffff; }
+    #workspaces button {
+      padding: 0 6px;
+      margin: 2px;
+      border: 1px solid #333333;
+      background: #222222;
+      color: #888888;
+    }
+    #workspaces button.visible { color: #ffffff; }
+    #workspaces button.focused { background: #285577; border-color: #4c7899; color: #ffffff; }
+    #workspaces button.urgent, #mode { background: #900000; color: #ffffff; }
+    #network, #disk, #cpu, #memory, #clock, #tray {
+      padding: 0 8px;
+      margin: 4px 0;
+      border-left: 1px solid #666666;
+    }
+    #network { color: #00ff00; }
+    #network.disconnected, #network.linked { color: #ff0000; }
   '';
   environment.etc."sway/config.d/outputs.conf".text = ''
     workspace 1 output DP1L
@@ -187,7 +251,11 @@ in
   programs.firefox.enable = true;
   nixpkgs.config.allowUnfree = true;
   programs.obs-studio.enable = true;
-  environment.systemPackages = [ pkgs.nano pkgs.bat pkgs.alacritty pkgs.google-chrome pkgs.seahorse flameshot13 pkgs.zstd
+  xdg.portal.wlr.settings.screencast = {
+    chooser_type = "simple";
+    chooser_cmd = "${pkgs.slurp}/bin/slurp -f 'Monitor: %o' -or";
+  };
+  environment.systemPackages = [ pkgs.nano pkgs.bat pkgs.alacritty pkgs.google-chrome pkgs.discord pkgs.seahorse pkgs.waybar pkgs.zsh-completions flameshot13 pkgs.zstd codeInsiders.fhs
     (pkgs.codex.overrideAttrs (old: {
       buildInputs = (old.buildInputs or []) ++ (with pkgs; [
         aws-lc
@@ -199,6 +267,7 @@ in
 ];
   environment.etc."alacritty/alacritty.toml".source = (pkgs.formats.toml {}).generate "alacritty.toml" {
     font.normal.family = "DejaVuSansM Nerd Font Mono";
+    font.size = 14;
     # Foot 1.28's default dark palette.
     colors = {
       primary = { background = "#242424"; foreground = "#ffffff"; };
