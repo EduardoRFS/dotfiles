@@ -1,9 +1,9 @@
 { config, lib, pkgs, modulesPath, ... }:
 
 let
-  vmCPUs = "12-15,28-31";
-  hostCPUs = "0-11,16-27";
-  hostAffinity = "0-11 16-27";
+  vmCPUs = "8-15,24-31";
+  hostCPUs = "0-7,16-23";
+  hostAffinity = "0-7 16-23";
 
   kernels = {
     standard = pkgs.linuxPackages_6_18;
@@ -60,9 +60,6 @@ in
     (name: profile: lib.mkIf (profileName == name) (mkProfile name profile))
     profiles) ++ [
     {
-      # Share these packages with the toy guest defined in vms.nix.
-      _module.args.fernandoKernels = kernels;
-
       boot.initrd.availableKernelModules = [ "nvme" "xhci_pci" "ahci" "usbhid" ];
       boot.kernelParams = [
         # Reserve the integrated GPU and its audio device.
@@ -98,6 +95,29 @@ in
 
       nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
       hardware.cpu.amd.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;
+
+      # Put the host and its VMs on the wired LAN through the same bridge.
+      networking.networkmanager.ensureProfiles.profiles = {
+        br0 = {
+          connection = {
+            id = "br0";
+            type = "bridge";
+            interface-name = "br0";
+            autoconnect-ports = 1;
+          };
+          bridge = { stp = false; mac-address = "04:7c:16:bb:58:80"; };
+          ipv4.method = "auto";
+          ipv6.method = "auto";
+        };
+        br0-enp14s0.connection = {
+          id = "br0-enp14s0";
+          type = "ethernet";
+          interface-name = "enp14s0";
+          controller = "br0";
+          port-type = "bridge";
+          autoconnect-priority = 100;
+        };
+      };
 
       specialisation.standard.configuration.hardware.fernando.kernelProfile = "standard";
       specialisation.realtime-reserved.configuration.hardware.fernando.kernelProfile = "realtime-reserved";

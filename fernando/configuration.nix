@@ -163,6 +163,14 @@ in
   # Keep SSH keys in OpenSSH's agent, loaded manually with ssh-add.
   services.gnome.gcr-ssh-agent.enable = false;
   programs.ssh.startAgent = true;
+  programs.ssh.extraConfig = ''
+    Host robert
+      HostName robert.local
+  '';
+  services.avahi = {
+    enable = true;
+    nssmdns4 = true;
+  };
 
   programs.sway.enable = true;
   programs.sway.package = customSway;
@@ -179,7 +187,8 @@ in
   environment.etc."sway/config.d/desktop.conf".text = ''
     focus_follows_mouse no
     bar bar-0 {
-      swaybar_command ${pkgs.waybar}/bin/waybar --config /etc/xdg/waybar/config --style /etc/xdg/waybar/style.css
+      # Sway expects an executable path; Waybar finds /etc/xdg/waybar itself.
+      swaybar_command ${pkgs.waybar}/bin/waybar
     }
     set $term alacritty
     unbindsym $mod+Return

@@ -7,47 +7,68 @@
     };
   };
 
-  outputs = { nixvirt, ... }:
+  outputs = { nixpkgs, nixvirt, ... }:
   let
+    inherit (nixpkgs) lib;
+    # Host SMT sibling pairs.
+    cpus = [ 8 24 9 25 10 26 11 27 12 28 13 29 14 30 15 31 ];
+    vcpus = builtins.length cpus;
+
     domain = nixvirt.lib.domain.writeXML {
       type = "kvm";
-      name = "fernando-toy";
-      uuid = "ecb41d83-ddd8-44ae-9b0d-bc08fb304720";
-      description = "Manual-start VM; payload unspecified. Use the realtime-reserved host profile for isolation.";
-      memory = { count = 2048; unit = "MiB"; };
-      # Include QEMU overhead in the locked-memory limit.
-      memtune.hard_limit = { count = 4096; unit = "MiB"; };
+      name = "robert";
+      uuid = "188bd2bc-fc02-4ab7-9c96-09fc741ec36f";
+      memory = { count = 24; unit = "GiB"; };
       memoryBacking = {
         nosharepages = {};
         locked = {};
         allocation.mode = "immediate";
       };
-      vcpu = { count = 4; placement = "static"; };
+      vcpu.count = vcpus;
       cputune = {
-        # One vCPU per physical core; SMT siblings 28-31 stay unused by this VM.
-        vcpupin = builtins.genList (vcpu: { inherit vcpu; cpuset = toString (12 + vcpu); }) 4;
-        emulatorpin.cpuset = "0-11,16-27";
-        vcpusched = { vcpus = "0-3"; scheduler = "fifo"; priority = 1; };
+        vcpupin = lib.imap0 (vcpu: cpu: { inherit vcpu; cpuset = toString cpu; }) cpus;
+        emulatorpin.cpuset = "0-7,16-23";
+        vcpusched = { vcpus = "0-${toString (vcpus - 1)}"; scheduler = "fifo"; priority = 1; };
       };
-      os = { type = "hvm"; arch = "x86_64"; machine = "q35"; };
-      features = { acpi = {}; apic = {}; };
+      os = {
+        type = "hvm";
+        arch = "x86_64";
+        machine = "q35";
+        firmware = "efi";
+        # Avoid firmware requiring SMM; let libvirt choose the file.
+        loader = { secure = false; path = ""; };
+      };
+      features.acpi = {};
       cpu = {
         mode = "host-passthrough";
         migratable = false;
-        topology = { sockets = 1; cores = 4; threads = 1; };
+        topology = { sockets = 1; cores = builtins.div vcpus 2; threads = 2; };
       };
-      clock.offset = "utc";
-      on_poweroff = "destroy";
-      on_reboot = "restart";
-      on_crash = "destroy";
       devices = {
-        serial = { type = "pty"; target.port = 0; };
-        console = { type = "pty"; target = { type = "serial"; port = 0; }; };
+        serial.type = "pty";
         memballoon.model = "none";
+        disk = {
+          type = "block";
+          driver = { name = "qemu"; type = "raw"; cache = "none"; io = "native"; };
+          source.dev = "/dev/disk/by-id/nvme-eui.002538b421400b86";
+          target = { dev = "vda"; bus = "virtio"; };
+        };
+        interface = {
+          type = "bridge";
+          source.bridge = "br0";
+          mac.address = "52:54:00:72:6f:62";
+          model.type = "virtio";
+        };
+        channel = { type = "unix"; target = { type = "virtio"; name = "org.qemu.guest_agent.0"; }; };
       };
     };
   in
   {
+    nixosConfigurations.robert = lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [ ./robert.nix ];
+    };
+
     nixosModules.default = { pkgs, ... }: {
       imports = [ nixvirt.nixosModules.default ];
       virtualisation.libvirt = {
@@ -55,12 +76,11 @@
         package = pkgs.libvirt;
         connections."qemu:///system".domains = [{
           definition = domain;
-          active = null;
           restart = false;
         }];
       };
       systemd.services.nixvirt.postStart = ''
-        ${pkgs.libvirt}/bin/virsh -c qemu:///system autostart --disable fernando-toy
+        ${pkgs.libvirt}/bin/virsh -c qemu:///system autostart --disable robert
       '';
       virtualisation.libvirtd = {
         qemu.runAsRoot = false;
