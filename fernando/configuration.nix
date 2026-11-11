@@ -5,6 +5,27 @@
 { config, lib, pkgs, ... }:
 
 let
+  swaySource = pkgs.fetchFromGitHub {
+    owner = "EduardoRFS";
+    repo = "sway";
+    rev = "e73d1bcb466532cdb555a9dfbd8c977e9507d33e";
+    hash = "sha256-AfzWWLFjmXESoM/3mdk+ZE1ymrnHcf4LO3CNBWjMdyw=";
+  };
+  # The fork's output partitions require the accompanying wlroots backend.
+  partitionedWlroots = pkgs.wlroots_0_20.overrideAttrs (old: {
+    patches = (old.patches or []) ++ [
+      "${swaySource}/patches/wlroots-0.20.2-output-partitions.patch"
+    ];
+  });
+  customSway = pkgs.sway.override {
+    sway-unwrapped = (pkgs.sway-unwrapped.override {
+      wlroots_0_20 = partitionedWlroots;
+    }).overrideAttrs (_: {
+      version = "1.12-e73d1bcb";
+      src = swaySource;
+    });
+  };
+
   # Keep Flameshot on v13 even when the system channel moves to newer releases.
   flameshot13 = pkgs.flameshot.overrideAttrs (_: {
     version = "13.3.0";
@@ -44,6 +65,8 @@ in
 
   networking.hostName = "fernando"; # Define your hostname.
 
+  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+
   # Configure network connections interactively with nmcli or nmtui.
   networking.networkmanager.enable = true;
   programs.nm-applet.enable = true;
@@ -75,10 +98,16 @@ in
   # Enable sound.
   # services.pulseaudio.enable = true;
   # OR
+  security.sudo.wheelNeedsPassword = false;
   security.rtkit.enable = true;
   services.pipewire = {
     enable = true;
     pulse.enable = true;
+    extraConfig.pipewire-pulse."90-recsink" = {
+      "pulse.cmd" = [
+        { cmd = "load-module"; args = "module-null-sink sink_name=recsink"; }
+      ];
+    };
   };
 
   # Enable touchpad support (enabled default in most desktopManager).
@@ -111,14 +140,15 @@ in
   # Include the Powerline glyphs used by the Agnoster prompt.
   fonts.fontconfig.defaultFonts.monospace = [ "DejaVuSansM Nerd Font Mono" ];
 
-  # Unlock the login keyring when logging into the console before starting Sway.
   services.gnome.gnome-keyring.enable = true;
-  security.pam.services.login.enableGnomeKeyring = true;
+  # Prompt for the keyring password instead of unlocking it at console login.
+  security.pam.services.login.enableGnomeKeyring = lib.mkForce false;
   # Keep SSH keys in OpenSSH's agent, loaded manually with ssh-add.
   services.gnome.gcr-ssh-agent.enable = false;
   programs.ssh.startAgent = true;
 
   programs.sway.enable = true;
+  programs.sway.package = customSway;
   programs.sway.extraSessionCommands = ''
     ${pkgs.gnome-keyring}/bin/gnome-keyring-daemon --start --components=secrets >/dev/null
   '';
@@ -130,15 +160,43 @@ in
     }
   '';
   environment.etc."sway/config.d/desktop.conf".text = ''
+    focus_follows_mouse no
+    bar bar-0 {
+      position bottom
+      output DP1L
+      output DP1R
+    }
     set $term alacritty
+    unbindsym $mod+Return
     bindsym $mod+Return exec $term
     exec dbus-update-activation-environment --systemd SSH_AUTH_SOCK
+    unbindsym Print
     bindsym Print exec env QT_QPA_PLATFORM=wayland ${flameshot13}/bin/flameshot gui
     for_window [app_id="flameshot"] border pixel 0, floating enable, fullscreen disable, move absolute position 0 0
   '';
+  environment.etc."sway/config.d/outputs.conf".text = ''
+    workspace 1 output DP1L
+    workspace 2 output DP1M
+    workspace 3 output DP1R
+
+    output DP-1 mode 5120x1440
+    output DP-1 scale 1
+    output DP-1 transform normal
+    output DP-1 partition "DP1L:1280x1440+0+0,DP1M:2560x1440+1280+0,DP1R:1280x1440+3840+0"
+  '';
   programs.firefox.enable = true;
+  nixpkgs.config.allowUnfree = true;
   programs.obs-studio.enable = true;
-  environment.systemPackages = [ pkgs.nano pkgs.bat pkgs.alacritty pkgs.seahorse flameshot13 ];
+  environment.systemPackages = [ pkgs.nano pkgs.bat pkgs.alacritty pkgs.google-chrome pkgs.seahorse flameshot13 pkgs.zstd
+    (pkgs.codex.overrideAttrs (old: {
+      buildInputs = (old.buildInputs or []) ++ (with pkgs; [
+        aws-lc
+        oniguruma
+        sqlite
+        zstd
+      ]);
+    }))
+];
   environment.etc."alacritty/alacritty.toml".source = (pkgs.formats.toml {}).generate "alacritty.toml" {
     font.normal.family = "DejaVuSansM Nerd Font Mono";
     # Foot 1.28's default dark palette.

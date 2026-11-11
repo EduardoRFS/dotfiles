@@ -69,8 +69,11 @@ in
         "vfio-pci.ids=1002:164e,1002:1640"
       ];
       boot.initrd.kernelModules = [ "vfio_pci" "vfio" "vfio_iommu_type1" ];
-      boot.kernelModules = [ "kvm-amd" ];
-      boot.extraModulePackages = [ ];
+      boot.kernelModules = [ "kvm-amd" "v4l2loopback" ];
+      boot.extraModulePackages = [ config.boot.kernelPackages.v4l2loopback ];
+      boot.extraModprobeConfig = ''
+        options v4l2loopback devices=2 video_nr=3,4 card_label="Double Webcam,Triple Webcam" exclusive_caps=1,1
+      '';
 
       fileSystems."/" =
         { device = "/dev/mapper/nix_root";
@@ -79,7 +82,7 @@ in
         };
 
       fileSystems."/boot" = {
-        device = "/dev/disk/by-uuid/ED2B-9062";
+        device = "/dev/disk/by-uuid/E874-A47F";
         fsType = "vfat";
         options = [ "umask=0077" ];
       };
