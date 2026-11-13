@@ -28,9 +28,19 @@ let
       "${swaySource}/patches/wlroots-0.20.2-output-partitions.patch"
     ];
   });
+  # json-c 0.19 skips nested object frees when assertions are disabled.
+  fixedJsonC = pkgs.json_c.overrideAttrs (old: {
+    patches = (old.patches or []) ++ [
+      (pkgs.fetchurl {
+        url = "https://github.com/json-c/json-c/commit/f291fa81c6f21d925ea771a8cca597f5886309cc.patch";
+        hash = "sha256-QoNmM/zn+kdVrnJF+zArwEDYJL5fnOqo7UUQzk+i5Gs=";
+      })
+    ];
+  });
   customSway = pkgs.sway.override {
     sway-unwrapped = (pkgs.sway-unwrapped.override {
       wlroots_0_20 = partitionedWlroots;
+      json_c = fixedJsonC;
     }).overrideAttrs (_: {
       version = "1.12-e73d1bcb";
       src = swaySource;
@@ -75,6 +85,10 @@ in
   boot.loader.timeout = 3;
 
   networking.hostName = "fernando"; # Define your hostname.
+  networking.hosts = {
+    "127.0.0.1" = [ "x.com" "web.telegram.org" ];
+    "::1" = [ "x.com" "web.telegram.org" ];
+  };
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
@@ -186,6 +200,7 @@ in
   '';
   environment.etc."sway/config.d/desktop.conf".text = ''
     focus_follows_mouse no
+    seat * xcursor_theme Adwaita 32
     bar bar-0 {
       # Sway expects an executable path; Waybar finds /etc/xdg/waybar itself.
       swaybar_command ${pkgs.waybar}/bin/waybar
@@ -196,7 +211,12 @@ in
     exec dbus-update-activation-environment --systemd SSH_AUTH_SOCK
     unbindsym Print
     bindsym Print exec env QT_QPA_PLATFORM=wayland ${flameshot13}/bin/flameshot gui
-    for_window [app_id="flameshot"] border pixel 0, floating enable, fullscreen disable, move absolute position 0 0
+    for_window [title="^flameshot$"] border pixel 0, fullscreen enable global
+  '';
+  environment.etc."xdg/flameshot/flameshot.ini".text = ''
+    [General]
+    useGrimAdapter=true
+    disabledGrimWarning=true
   '';
   environment.etc."xdg/waybar/config".text = builtins.toJSON {
     layer = "bottom";
@@ -259,12 +279,31 @@ in
   '';
   programs.firefox.enable = true;
   nixpkgs.config.allowUnfree = true;
-  programs.obs-studio.enable = true;
+  programs.obs-studio = {
+    enable = true;
+    plugins = [ pkgs.obs-studio-plugins.wlrobs ];
+  };
+  nixpkgs.overlays = [
+    (_: prev: {
+      xdg-desktop-portal-wlr = prev.xdg-desktop-portal-wlr.overrideAttrs (old: {
+        # Fix capture dying with "session already has a frame object" (upstream PR #405).
+        patches = (old.patches or []) ++ [
+          (prev.fetchurl {
+            url = "https://github.com/emersion/xdg-desktop-portal-wlr/commit/fb1befbac6ea04d02fd045b2c970dcc0a1a49015.patch";
+            hash = "sha256-ULmXjjshAcY+ZX7PT7wtj3Jur1fcfVOKp3RlqyMPbiI=";
+          })
+        ];
+      });
+    })
+  ];
   xdg.portal.wlr.settings.screencast = {
     chooser_type = "simple";
     chooser_cmd = "${pkgs.slurp}/bin/slurp -f 'Monitor: %o' -or";
   };
   environment.systemPackages = [ pkgs.nano pkgs.bat pkgs.alacritty pkgs.google-chrome pkgs.discord pkgs.seahorse pkgs.waybar pkgs.zsh-completions flameshot13 pkgs.zstd codeInsiders.fhs
+    pkgs.htop pkgs.screen pkgs.ffmpeg pkgs.efibootmgr
+    pkgs.lm_sensors pkgs.usbutils pkgs.pciutils pkgs.pulsemixer pkgs.pavucontrol
+    pkgs.adwaita-icon-theme pkgs.spotify
     (pkgs.codex.overrideAttrs (old: {
       buildInputs = (old.buildInputs or []) ++ (with pkgs; [
         aws-lc
